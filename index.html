@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>思维导图</title>
+  
+  <style>
+    /* ===== Design System Tokens ===== */
+    :root {
+      --bg-canvas: #f5f3ef;
+      --bg-canvas-dot: #d8d4cc;
+      --toolbar-bg: rgba(255,255,255,0.82);
+      --toolbar-border: rgba(0,0,0,0.06);
+      --toolbar-shadow: 0 1px 8px rgba(0,0,0,0.06), 0 0 1px rgba(0,0,0,0.08);
+      --surface: #ffffff;
+      --surface-hover: #f8f7f4;
+      --border: rgba(0,0,0,0.08);
+      --border-hover: rgba(0,0,0,0.14);
+      --text-primary: #1a1a2e;
+      --text-secondary: #5c5c7a;
+      --text-muted: #9e9eb8;
+      --accent: #6c5ce7;
+      --accent-light: #a29bfe;
+      --accent-bg: #ede9fe;
+      --accent-hover: #5a4bd1;
+      --accent-glow: rgba(108,92,231,0.25);
+      --danger: #e74c5e;
+      --danger-bg: #fef2f2;
+      --success: #2ecc71;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.06), 0 0 1px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 0 1px rgba(0,0,0,0.06);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.10), 0 0 1px rgba(0,0,0,0.06);
+      --shadow-node: 0 2px 6px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.04);
+      --shadow-node-hover: 0 6px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --transition-fast: 0.15s cubic-bezier(0.4,0,0.2,1);
+      --transition-smooth: 0.25s cubic-bezier(0.4,0,0.2,1);
+      --transition-spring: 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    /* ===== Animations ===== */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes glowPulse { 0%, 100% { box-shadow: 0 0 0 3px var(--accent-glow), var(--shadow-node-hover); } 50% { box-shadow: 0 0 0 5px var(--accent-glow), var(--shadow-node-hover); } }
+    @keyframes badgePulse { 0%, 100% { transform: translateY(-50%) scale(1); } 50% { transform: translateY(-50%) scale(1.1); } }
+
+    /* ===== Base ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; background: var(--bg-canvas); -webkit-font-smoothing: antialiased; }
+    body { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ===== Toolbar ===== */
+    .toolbar {
+      height: 52px; background: var(--toolbar-bg);
+      backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6);
+      border-bottom: 1px solid var(--toolbar-border);
+      display: flex; align-items: center; padding: 0 20px; gap: 6px;
+      box-shadow: var(--toolbar-shadow); position: relative; z-index: 100; flex-shrink: 0;
+    }
+    .toolbar button {
+      padding: 7px 14px; border: none; border-radius: var(--radius-sm);
+      background: transparent; color: var(--text-secondary); font-size: 13px;
+      font-weight: 500; cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: all var(--transition-fast); position: relative;
+      letter-spacing: 0.01em;
+    }
+    .toolbar button:hover {
+      background: var(--surface); color: var(--text-primary);
+      box-shadow: var(--shadow-xs);
+    }
+    .toolbar button:active {
+      transform: scale(0.96); background: var(--surface-hover);
+    }
+    .toolbar button .btn-emoji { font-size: 15px; line-height: 1; }
+    .toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+
+    /* ===== Canvas ===== */
+    .canvas-container {
+      flex: 1; overflow: hidden; position: relative; cursor: grab;
+      background-color: var(--bg-canvas);
+      background-image: radial-gradient(circle, var(--bg-canvas-dot) 0.8px, transparent 0.8px);
+      background-size: 24px 24px;
+    }
+    .canvas-container.panning { cursor: grabbing; }
+    .canvas-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+    .svg-layer { position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+    .node-layer { position: absolute; top: 0; left: 0; }
+
+    /* ===== Mind Nodes ===== */
+    .mind-node {
+      position: absolute; padding: 8px 16px; border-radius: var(--radius-sm);
+      border: none; background: var(--surface); cursor: pointer;
+      min-width: 60px; font-size: 14px; color: var(--text-primary);
+      user-select: none;
+      box-shadow: var(--shadow-node);
+      transition: box-shadow var(--transition-smooth), transform var(--transition-fast), background var(--transition-fast);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .mind-node:hover {
+      box-shadow: var(--shadow-node-hover);
+      transform: translateY(-1px);
+    }
+    .mind-node.selected {
+      animation: glowPulse 2s ease-in-out infinite;
+      border-left: 3px solid var(--accent) !important;
+    }
+    .mind-node.root {
+      font-size: 16px; font-weight: 600; padding: 12px 22px;
+      background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+      color: #fff; border: none;
+      box-shadow: 0 4px 16px rgba(108,92,231,0.25), 0 0 0 1px rgba(108,92,231,0.1);
+      border-radius: var(--radius-md);
+    }
+    .mind-node.root:hover {
+      box-shadow: 0 6px 24px rgba(108,92,231,0.35), 0 0 0 1px rgba(108,92,231,0.15);
+      transform: translateY(-2px);
+    }
+    .mind-node.root.selected {
+      animation: glowPulse 2s ease-in-out infinite;
+      border-left: none !important;
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.4), 0 4px 16px rgba(108,92,231,0.3);
+    }
+    .mind-node.editing { cursor: text; outline: none; user-select: text; }
+    .mind-node .node-icon { font-size: 16px; flex-shrink: 0; }
+    .mind-node .node-text { outline: none; min-width: 20px; white-space: nowrap; line-height: 1.5; }
+    .mind-node .node-icons { display: flex; gap: 4px; margin-left: 4px; flex-shrink: 0; }
+    .mind-node .node-icons .icon-badge {
+      width: 20px; height: 20px; border-radius: 6px;
+      background: var(--accent-bg); display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: var(--accent);
+      transition: all var(--transition-fast);
+    }
+    .mind-node .node-icons .icon-badge:hover {
+      background: var(--accent); color: #fff; transform: scale(1.1);
+    }
+    .mind-node.drag-over {
+      box-shadow: 0 0 0 3px var(--accent-glow), var(--shadow-md) !important;
+      border-left: 3px solid var(--accent) !important;
+    }
+
+    /* ===== Collapse Badge ===== */
+    .collapse-badge {
+      position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+      width: 24px; height: 24px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+      border: 2px solid var(--surface); font-size: 10px; font-weight: 600;
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 1;
+      box-shadow: 0 2px 8px rgba(108,92,231,0.3);
+      transition: all var(--transition-spring);
+    }
+    .collapse-badge:hover {
+      animation: badgePulse 0.8s ease-in-out infinite;
+      box-shadow: 0 3px 12px rgba(108,92,231,0.4);
+    }
+
+    /* ===== Context Menu ===== */
+    .context-menu {
+      display: none; position: fixed;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(24px) saturate(1.8); -webkit-backdrop-filter: blur(24px) saturate(1.8);
+      border-radius: var(--radius-md); border: 1px solid var(--border);
+      min-width: 200px; padding: 6px; z-index: 1000;
+      box-shadow: var(--shadow-lg);
+    }
+    .context-menu.show { display: block; animation: slideDown var(--transition-smooth) ease-out; }
+    .context-menu-item {
+      padding: 9px 14px; font-size: 13px; font-weight: 500; color: var(--text-primary);
+      cursor: pointer; display: flex; align-items: center; gap: 10px;
+      border-radius: var(--radius-sm); transition: all var(--transition-fast);
+    }
+    .context-menu-item:hover { background: var(--accent-bg); color: var(--accent); }
+    .context-menu-item.disabled { color: var(--text-muted); pointer-events: none; }
+    .context-menu-item .ctx-emoji { font-size: 14px; width: 18px; text-align: center; }
+    .context-menu-sep { height: 1px; background: var(--border); margin: 4px 8px; }
+
+    /* ===== Modal ===== */
+    .modal-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(26,26,46,0.3);
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+      z-index: 2000; align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; animation: fadeIn var(--transition-fast) ease-out; }
+    .modal {
+      background: var(--surface); border-radius: var(--radius-lg); padding: 28px;
+      min-width: 340px; max-width: 500px; max-height: 80vh; overflow-y: auto;
+      box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,0.04);
+      animation: slideUp var(--transition-smooth) ease-out;
+    }
+    .modal h3 {
+      font-size: 17px; font-weight: 600; margin-bottom: 20px; color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .modal input[type="text"], .modal textarea {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 14px; color: var(--text-primary); outline: none; background: var(--bg-canvas);
+      transition: all var(--transition-fast);
+    }
+    .modal input[type="text"]:focus, .modal textarea:focus {
+      border-color: var(--accent); background: var(--surface);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .modal-actions button {
+      padding: 9px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
+      cursor: pointer; border: none; background: var(--surface-hover); color: var(--text-secondary);
+      transition: all var(--transition-fast);
+    }
+    .modal-actions button:hover { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-xs); }
+    .modal-actions button:active { transform: scale(0.97); }
+    .modal-actions button.primary {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+      color: #fff; box-shadow: 0 2px 8px rgba(108,92,231,0.25);
+    }
+    .modal-actions button.primary:hover {
+      box-shadow: 0 4px 14px rgba(108,92,231,0.35); transform: translateY(-1px);
+    }
+    .modal-actions button.primary:active { transform: translateY(0) scale(0.97); }
+
+    /* ===== Save List ===== */
+    .save-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .save-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      cursor: pointer; transition: all var(--transition-fast);
+    }
+    .save-item:hover { background: var(--accent-bg); border-color: var(--accent-light); }
+    .save-item .save-name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+    .save-item .save-time { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .save-item .save-delete {
+      padding: 5px 10px; border: none; background: none; color: var(--danger); cursor: pointer;
+      font-size: 12px; border-radius: 6px; font-weight: 500; transition: all var(--transition-fast);
+    }
+    .save-item .save-delete:hover { background: var(--danger-bg); }
+
+    /* ===== Color Picker ===== */
+    .color-picker-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .color-picker-row label { font-size: 13px; font-weight: 500; color: var(--text-secondary); min-width: 60px; }
+    .color-picker-row input[type="color"] {
+      width: 40px; height: 32px; border: 2px solid var(--border); border-radius: 8px;
+      cursor: pointer; padding: 2px; transition: all var(--transition-fast);
+    }
+    .color-picker-row input[type="color"]:hover { border-color: var(--accent); transform: scale(1.05); }
+
+    /* ===== Emoji Grid ===== */
+    .emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-bottom: 8px; }
+    .emoji-item {
+      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+      font-size: 20px; border-radius: var(--radius-sm); cursor: pointer;
+      border: 1.5px solid transparent; transition: all var(--transition-fast);
+    }
+    .emoji-item:hover {
+      background: var(--accent-bg); border-color: var(--accent-light);
+      transform: scale(1.12);
+    }
+
+    /* ===== Auto Save Hint ===== */
+    #autoSaveHint {
+      background: linear-gradient(135deg, #1a1a2e 0%, #2d2b55 100%) !important;
+      border-radius: 10px !important;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15) !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="btnNew"><span class="btn-emoji">✦</span>新建</button>
+    <div class="sep"></div>
+    <button id="btnSave"><span class="btn-emoji">💾</span>保存</button>
+    <button id="btnOpen"><span class="btn-emoji">📂</span>打开</button>
+    <div class="sep"></div>
+    <button id="btnExportJSON"><span class="btn-emoji">📋</span>导出JSON</button>
+    <button id="btnImportJSON"><span class="btn-emoji">📥</span>导入JSON</button>
+    <button id="btnExportPNG"><span class="btn-emoji">🖼️</span>导出PNG</button>
+  </div>
+  <div class="canvas-container" id="canvasContainer">
+    <div class="canvas-content" id="canvasContent">
+      <svg class="svg-layer" id="svgLayer"></svg>
+      <div class="node-layer" id="nodeLayer"></div>
+    </div>
+  </div>
+  <div class="context-menu" id="contextMenu">
+    <div class="context-menu-item" data-action="addChildRight"><span class="ctx-emoji">➡️</span>右侧添加子节点</div>
+    <div class="context-menu-item" data-action="addChildLeft"><span class="ctx-emoji">⬅️</span>左侧添加子节点</div>
+    <div class="context-menu-item" data-action="addSibling"><span class="ctx-emoji">↔️</span>添加兄弟节点</div>
+    <div class="context-menu-sep"></div>
+    <div class="context-menu-item" data-action="edit"><span class="ctx-emoji">✏️</span>编辑</div>
+    <div class="context-menu-item" data-action="delete"><span class="ctx-emoji">🗑️</span>删除</div>
+    <div class="context-menu-item" data-action="toggleCollapse"><span class="ctx-emoji">🔽</span>折叠</div>
+    <div class="context-menu-sep"></div>
+    <div class="context-menu-item" data-action="setColor"><span class="ctx-emoji">🎨</span>设置颜色</div>
+    <div class="context-menu-item" data-action="setIcon"><span class="ctx-emoji">📌</span>添加图标</div>
+    <div class="context-menu-item" data-action="setLink"><span class="ctx-emoji">🔗</span>添加链接</div>
+    <div class="context-menu-item" data-action="setNote"><span class="ctx-emoji">📝</span>添加备注</div>
+  </div>
+  <div class="modal-overlay" id="saveModal">
+    <div class="modal">
+      <h3>保存思维导图</h3>
+      <input type="text" id="saveNameInput" placeholder="输入名称" />
+      <div class="modal-actions"><button id="saveCancelBtn">取消</button><button class="primary" id="saveConfirmBtn">保存</button></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="openModal">
+    <div class="modal">
+      <h3>打开思维导图</h3>
+      <div class="save-list" id="openList"></div>
+      <div class="modal-actions"><button id="openCancelBtn">取消</button></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="colorModal">
+    <div class="modal">
+      <h3>设置颜色</h3>
+      <div class="color-picker-row"><label>背景色</label><input type="color" id="bgColorInput" /></div>
+      <div class="color-picker-row"><label>文字色</label><input type="color" id="textColorInput" /></div>
+      <div class="color-picker-row"><label>边框色</label><input type="color" id="borderColorInput" /></div>
+      <div class="modal-actions"><button id="colorCancelBtn">取消</button><button class="primary" id="colorConfirmBtn">确定</button></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="iconModal">
+    <div class="modal">
+      <h3>选择图标</h3>
+      <div class="emoji-grid" id="emojiGrid"></div>
+      <div class="modal-actions"><button id="iconCancelBtn">取消</button></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="linkModal">
+    <div class="modal">
+      <h3>添加链接</h3>
+      <input type="text" id="linkInput" placeholder="https://..." />
+      <div class="modal-actions"><button id="linkClearBtn">清除</button><button id="linkCancelBtn">取消</button><button class="primary" id="linkConfirmBtn">确定</button></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="noteModal">
+    <div class="modal">
+      <h3>添加备注</h3>
+      <textarea id="noteTextarea" rows="5" placeholder="输入备注内容..."></textarea>
+      <div class="modal-actions"><button id="noteClearBtn">清除</button><button id="noteCancelBtn">取消</button><button class="primary" id="noteConfirmBtn">确定</button></div>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept=".json" style="display:none" />
+
+<script>
+// ===== 工具函数 =====
+function uuid() {
+  return 'xxxx-xxxx'.replace(/x/g, () => ((Math.random() * 16) | 0).toString(16));
+}
+
+// ===== 数据模型 =====
+function createNode(text, side) {
+  return {
+    id: uuid(), text: text || '新节点', children: [], collapsed: false, side: side || 'right',
+    style: { color: '#333', bgColor: '#fff', borderColor: '#d1d5db', icon: null, link: null, note: null }
+  };
+}
+
+var state = {
+  root: createNode('中心主题'), selectedId: null, currentFileName: null,
+  undoStack: [], redoStack: [], pan: { x: 0, y: 0 }, zoom: 1
+};
+
+// ===== 树操作 =====
+function findNode(node, id) {
+  if (node.id === id) return node;
+  for (var i = 0; i < node.children.length; i++) {
+    var found = findNode(node.children[i], id);
+    if (found) return found;
+  }
+  return null;
+}
+function findParent(node, id, parent) {
+  if (node.id === id) return parent || null;
+  for (var i = 0; i < node.children.length; i++) {
+    var found = findParent(node.children[i], id, node);
+    if (found) return found;
+  }
+  return null;
+}
+function countDescendants(node) {
+  var c = 0;
+  for (var i = 0; i < node.children.length; i++) c += 1 + countDescendants(node.children[i]);
+  return c;
+}
+function isDescendant(ancestorId, nodeId) {
+  var a = findNode(state.root, ancestorId);
+  return a ? findNode(a, nodeId) !== null : false;
+}
+function cloneTree(node) { return JSON.parse(JSON.stringify(node)); }
+
+// ===== 布局引擎（中心辐射式） =====
+var LAYOUT = { H_GAP: 50, V_GAP: 12, NODE_H: 40, ROOT_H: 48, PADDING_X: 100, PADDING_Y: 60 };
+
+function measureNodeHeight(node) {
+  var el = document.querySelector('.mind-node[data-id="' + node.id + '"]');
+  if (el) return el.offsetHeight;
+  var isRoot = node === state.root;
+  var lines = Math.max(1, Math.ceil(node.text.length / 18));
+  return (isRoot ? LAYOUT.ROOT_H : LAYOUT.NODE_H) + (lines - 1) * 20;
+}
+function measureNodeWidth(node) {
+  var el = document.querySelector('.mind-node[data-id="' + node.id + '"]');
+  if (el) return el.offsetWidth;
+  return Math.max(80, node.text.length * 14 + 40);
+}
+function computeSubtreeHeight(node) {
+  if (node.collapsed || node.children.length === 0) return measureNodeHeight(node) + LAYOUT.V_GAP;
+  var total = 0;
+  for (var i = 0; i < node.children.length; i++) total += computeSubtreeHeight(node.children[i]);
+  return Math.max(measureNodeHeight(node) + LAYOUT.V_GAP, total);
+}
+
+// direction: 1 = 向右展开, -1 = 向左展开
+function layoutNode(node, x, yCenter, positions, direction) {
+  var w = measureNodeWidth(node);
+  var h = measureNodeHeight(node);
+  // 向左展开时，节点右边缘对齐 x 位置
+  var nodeX = direction === -1 ? x - w : x;
+  positions[node.id] = { x: nodeX, y: yCenter - h / 2, width: w, height: h, dir: direction };
+  if (node.collapsed || node.children.length === 0) return;
+  // 子节点 x 位置：向右 = 当前节点右边缘 + H_GAP，向左 = 当前节点左边缘 - H_GAP
+  var childX = direction === 1 ? nodeX + w + LAYOUT.H_GAP : nodeX - LAYOUT.H_GAP;
+  var totalChildHeight = 0, childHeights = [];
+  for (var i = 0; i < node.children.length; i++) {
+    var ch = computeSubtreeHeight(node.children[i]);
+    childHeights.push(ch); totalChildHeight += ch;
+  }
+  var currentY = yCenter - totalChildHeight / 2;
+  for (var i = 0; i < node.children.length; i++) {
+    layoutNode(node.children[i], childX, currentY + childHeights[i] / 2, positions, direction);
+    currentY += childHeights[i];
+  }
+}
+
+function computeLayout() {
+  var positions = {};
+  var root = state.root;
+  var rw = measureNodeWidth(root);
+  var rh = measureNodeHeight(root);
+
+  // 根节点居中
+  var centerX = 900, centerY = 500;
+  positions[root.id] = { x: centerX - rw / 2, y: centerY - rh / 2, width: rw, height: rh, dir: 0 };
+
+  if (root.collapsed || root.children.length === 0) return positions;
+
+  // 按 side 字段分组，无 side 的默认右侧
+  var rightChildren = [], leftChildren = [];
+  for (var i = 0; i < root.children.length; i++) {
+    var c = root.children[i];
+    if (c.side === 'left') leftChildren.push(c);
+    else rightChildren.push(c);
+  }
+
+  // 右侧子树
+  if (rightChildren.length > 0) {
+    var rightX = centerX + rw / 2 + LAYOUT.H_GAP;
+    var totalRightH = 0, rightHeights = [];
+    for (var i = 0; i < rightChildren.length; i++) {
+      var ch = computeSubtreeHeight(rightChildren[i]);
+      rightHeights.push(ch); totalRightH += ch;
+    }
+    var curY = centerY - totalRightH / 2;
+    for (var i = 0; i < rightChildren.length; i++) {
+      layoutNode(rightChildren[i], rightX, curY + rightHeights[i] / 2, positions, 1);
+      curY += rightHeights[i];
+    }
+  }
+
+  // 左侧子树
+  if (leftChildren.length > 0) {
+    var leftX = centerX - rw / 2 - LAYOUT.H_GAP;
+    var totalLeftH = 0, leftHeights = [];
+    for (var i = 0; i < leftChildren.length; i++) {
+      var ch = computeSubtreeHeight(leftChildren[i]);
+      leftHeights.push(ch); totalLeftH += ch;
+    }
+    var curY = centerY - totalLeftH / 2;
+    for (var i = 0; i < leftChildren.length; i++) {
+      layoutNode(leftChildren[i], leftX, curY + leftHeights[i] / 2, positions, -1);
+      curY += leftHeights[i];
+    }
+  }
+
+  return positions;
+}
+
+// ===== 渲染 =====
+function render() {
+  // 第一遍：渲染节点获取真实尺寸
+  var positions = computeLayout();
+  renderNodes(positions);
+
+  // 等待 DOM 更新后，用真实尺寸重算布局
+  requestAnimationFrame(function() {
+    // 回写真实宽度
+    var nodes = document.querySelectorAll('.mind-node');
+    for (var i = 0; i < nodes.length; i++) {
+      var id = nodes[i].dataset.id;
+      if (positions[id]) {
+        positions[id].width = nodes[i].offsetWidth;
+        positions[id].height = nodes[i].offsetHeight;
+      }
+    }
+    // 用真实尺寸重新计算布局
+    var newPositions = computeLayout();
+    // 更新节点位置
+    for (var i = 0; i < nodes.length; i++) {
+      var id = nodes[i].dataset.id;
+      if (newPositions[id]) {
+        nodes[i].style.left = newPositions[id].x + 'px';
+        nodes[i].style.top = newPositions[id].y + 'px';
+        newPositions[id].width = nodes[i].offsetWidth;
+        newPositions[id].height = nodes[i].offsetHeight;
+      }
+    }
+    // 画连线
+    renderConnections(newPositions);
+  });
+  updateCanvasTransform();
+  scheduleAutoSave();
+}
+
+function renderNodes(positions) {
+  var layer = document.getElementById('nodeLayer');
+  layer.innerHTML = '';
+  renderTree(state.root, positions);
+}
+
+function renderTree(node, positions) {
+  var pos = positions[node.id];
+  if (!pos) return;
+  var el = document.createElement('div');
+  el.className = 'mind-node' + (node === state.root ? ' root' : '') + (state.selectedId === node.id ? ' selected' : '');
+  el.dataset.id = node.id;
+  el.style.left = pos.x + 'px';
+  el.style.top = pos.y + 'px';
+
+  if (node.style.icon) {
+    var iconEl = document.createElement('span');
+    iconEl.className = 'node-icon'; iconEl.textContent = node.style.icon; el.appendChild(iconEl);
+  }
+  var textEl = document.createElement('span');
+  textEl.className = 'node-text'; textEl.textContent = node.text; el.appendChild(textEl);
+
+  var iconsEl = document.createElement('span');
+  iconsEl.className = 'node-icons';
+  if (node.style.link) {
+    var b = document.createElement('span'); b.className = 'icon-badge'; b.textContent = '\uD83D\uDD17';
+    b.title = node.style.link;
+    b.onclick = (function(url) { return function(e) { e.stopPropagation(); window.open(url, '_blank'); }; })(node.style.link);
+    iconsEl.appendChild(b);
+  }
+  if (node.style.note) {
+    var b2 = document.createElement('span'); b2.className = 'icon-badge'; b2.textContent = '\uD83D\uDCDD'; b2.title = node.style.note; iconsEl.appendChild(b2);
+  }
+  el.appendChild(iconsEl);
+
+  el.style.color = node.style.color;
+  if (node === state.root) {
+    // root 节点保持渐变背景，只有用户自定义颜色时才覆盖
+    if (node.style.bgColor !== '#fff') {
+      el.style.background = node.style.bgColor;
+    }
+  } else {
+    el.style.backgroundColor = node.style.bgColor;
+    el.style.borderColor = node.style.borderColor;
+  }
+
+  if (node.collapsed && node.children.length > 0) {
+    var cb = document.createElement('span');
+    cb.className = 'collapse-badge'; cb.textContent = '+' + countDescendants(node);
+    cb.onclick = (function(nid) { return function(e) { e.stopPropagation(); toggleCollapse(nid); }; })(node.id);
+    el.appendChild(cb);
+  }
+
+  el.addEventListener('mousedown', (function(nid) { return function(e) { if (e.button === 0) { e.stopPropagation(); selectNode(nid); } }; })(node.id));
+  el.addEventListener('dblclick', (function(nid) { return function(e) { e.stopPropagation(); startEdit(nid); }; })(node.id));
+  el.addEventListener('contextmenu', (function(n) { return function(e) { e.preventDefault(); e.stopPropagation(); selectNode(n.id); showContextMenu(e.clientX, e.clientY, n); }; })(node));
+
+  el.draggable = true;
+  el.addEventListener('dragstart', (function(nid, elem) { return function(e) { e.dataTransfer.setData('text/plain', nid); elem.style.opacity = '0.5'; }; })(node.id, el));
+  el.addEventListener('dragend', (function(elem) { return function() { elem.style.opacity = '1'; }; })(el));
+  el.addEventListener('dragover', function(e) { e.preventDefault(); el.classList.add('drag-over'); });
+  el.addEventListener('dragleave', function() { el.classList.remove('drag-over'); });
+  el.addEventListener('drop', (function(nid) { return function(e) { e.preventDefault(); el.classList.remove('drag-over'); handleDrop(e.dataTransfer.getData('text/plain'), nid); }; })(node.id));
+
+  document.getElementById('nodeLayer').appendChild(el);
+
+  if (!node.collapsed) {
+    for (var i = 0; i < node.children.length; i++) renderTree(node.children[i], positions);
+  }
+}
+
+function renderConnections(positions) {
+  var svg = document.getElementById('svgLayer');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  drawConnections(state.root, positions);
+}
+
+function drawConnections(node, positions) {
+  if (node.collapsed || node.children.length === 0) return;
+  var pp = positions[node.id];
+  if (!pp) return;
+  for (var i = 0; i < node.children.length; i++) {
+    var cp = positions[node.children[i].id];
+    if (!cp) continue;
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    var dir = cp.dir || (cp.x >= pp.x ? 1 : -1); // 判断连线方向
+    var x1, x2;
+    if (dir === 1) {
+      // 右侧：从父节点右边缘到子节点左边缘
+      x1 = pp.x + pp.width; x2 = cp.x;
+    } else {
+      // 左侧：从父节点左边缘到子节点右边缘
+      x1 = pp.x; x2 = cp.x + cp.width;
+    }
+    var y1 = pp.y + pp.height / 2, y2 = cp.y + cp.height / 2;
+    var cx = (x1 + x2) / 2;
+    path.setAttribute('d', 'M' + x1 + ',' + y1 + ' C' + cx + ',' + y1 + ' ' + cx + ',' + y2 + ' ' + x2 + ',' + y2);
+    path.setAttribute('stroke', 'rgba(108,92,231,0.25)'); path.setAttribute('stroke-width', '2'); path.setAttribute('fill', 'none');
+    svg.appendChild(path);
+    drawConnections(node.children[i], positions);
+  }
+}
+
+// ===== 画布交互 =====
+function initCanvas() {
+  var container = document.getElementById('canvasContainer');
+  var isPanning = false, startX, startY;
+  container.addEventListener('mousedown', function(e) {
+    if (e.target === container || e.target.classList.contains('svg-layer') || e.target.id === 'canvasContent') {
+      isPanning = true; startX = e.clientX - state.pan.x; startY = e.clientY - state.pan.y;
+      container.classList.add('panning'); deselectNode();
+    }
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!isPanning) return;
+    state.pan.x = e.clientX - startX; state.pan.y = e.clientY - startY; updateCanvasTransform();
+  });
+  document.addEventListener('mouseup', function() { isPanning = false; container.classList.remove('panning'); });
+  container.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var delta = e.deltaY > 0 ? 0.9 : 1.1;
+    var newZoom = Math.max(0.3, Math.min(3, state.zoom * delta));
+    var rect = container.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    state.pan.x = mx - (mx - state.pan.x) * (newZoom / state.zoom);
+    state.pan.y = my - (my - state.pan.y) * (newZoom / state.zoom);
+    state.zoom = newZoom; updateCanvasTransform();
+  }, { passive: false });
+}
+function updateCanvasTransform() {
+  var c = document.getElementById('canvasContent');
+  if (c) c.style.transform = 'translate(' + state.pan.x + 'px,' + state.pan.y + 'px) scale(' + state.zoom + ')';
+}
+// 将视图居中到根节点
+function fitView() {
+  var container = document.getElementById('canvasContainer');
+  if (!container || !state.root) return;
+  var positions = computeLayout();
+  var rp = positions[state.root.id];
+  if (!rp) return;
+  var vw = container.clientWidth, vh = container.clientHeight;
+  var rootCenterX = rp.x + rp.width / 2;
+  var rootCenterY = rp.y + rp.height / 2;
+  state.pan.x = vw / 2 - rootCenterX;
+  state.pan.y = vh / 2 - rootCenterY;
+  state.zoom = 1;
+  updateCanvasTransform();
+}
+
+// ===== 节点操作 =====
+function selectNode(id) { state.selectedId = id; render(); }
+function deselectNode() { state.selectedId = null; render(); }
+
+// ===== 右键菜单 =====
+function initContextMenu() { document.addEventListener('click', hideContextMenu); }
+function showContextMenu(x, y, node) {
+  var menu = document.getElementById('contextMenu');
+  menu.classList.add('show');
+  var mw = menu.offsetWidth, mh = menu.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+  if (x + mw > vw) x = vw - mw - 8; if (y + mh > vh) y = vh - mh - 8;
+  menu.style.left = x + 'px'; menu.style.top = y + 'px';
+  var isRoot = node === state.root;
+  // 根节点：显示左右侧添加，隐藏兄弟节点；非根节点：隐藏左侧添加
+  menu.querySelector('[data-action="addChildLeft"]').classList.toggle('disabled', !isRoot);
+  menu.querySelector('[data-action="addSibling"]').classList.toggle('disabled', isRoot);
+  menu.querySelector('[data-action="delete"]').classList.toggle('disabled', isRoot);
+  menu.querySelector('[data-action="toggleCollapse"]').textContent = node.collapsed ? '展开' : '折叠';
+  var items = menu.querySelectorAll('.context-menu-item:not(.disabled)');
+  for (var i = 0; i < items.length; i++) {
+    items[i].onclick = (function(action, n) { return function(e) { e.stopPropagation(); handleContextAction(action, n); hideContextMenu(); }; })(items[i].dataset.action, node);
+  }
+}
+function hideContextMenu() { document.getElementById('contextMenu').classList.remove('show'); }
+
+// ===== 节点 CRUD =====
+function handleContextAction(action, node) {
+  pushUndo();
+  switch (action) {
+    case 'addChildRight': addChild(node.id, 'right'); break;
+    case 'addChildLeft': addChild(node.id, 'left'); break;
+    case 'addSibling': addSibling(node.id); break;
+    case 'edit': startEdit(node.id); break;
+    case 'delete': deleteNode(node.id); break;
+    case 'toggleCollapse': toggleCollapse(node.id); break;
+    case 'setColor': showColorModal(node.id); break;
+    case 'setIcon': showIconModal(node.id); break;
+    case 'setLink': showLinkModal(node.id); break;
+    case 'setNote': showNoteModal(node.id); break;
+  }
+}
+function addChild(parentId, side) {
+  var parent = findNode(state.root, parentId); if (!parent) return;
+  // 决定新节点的 side：根节点用传入参数或默认 right，非根节点继承父节点方向
+  var childSide;
+  if (parent === state.root) {
+    childSide = side || 'right';
+  } else {
+    childSide = parent.side || 'right';
+  }
+  var child = createNode('新节点', childSide); parent.children.push(child); parent.collapsed = false;
+  selectNode(child.id); setTimeout(function() { startEdit(child.id); }, 50);
+}
+function addSibling(nodeId) {
+  var parent = findParent(state.root, nodeId); if (!parent) return;
+  var node = findNode(state.root, nodeId);
+  var idx = parent.children.findIndex(function(c) { return c.id === nodeId; });
+  var siblingSide = node ? (node.side || 'right') : 'right';
+  var sibling = createNode('新节点', siblingSide); parent.children.splice(idx + 1, 0, sibling);
+  selectNode(sibling.id); setTimeout(function() { startEdit(sibling.id); }, 50);
+}
+function deleteNode(nodeId) {
+  if (nodeId === state.root.id) return;
+  var parent = findParent(state.root, nodeId); if (!parent) return;
+  parent.children = parent.children.filter(function(c) { return c.id !== nodeId; });
+  state.selectedId = parent.id; render();
+}
+function toggleCollapse(nodeId) {
+  var node = findNode(state.root, nodeId); if (!node) return;
+  node.collapsed = !node.collapsed; render();
+}
+function startEdit(nodeId) {
+  var el = document.querySelector('.mind-node[data-id="' + nodeId + '"] .node-text');
+  if (!el) return;
+  el.style.whiteSpace = 'pre-wrap'; // 编辑时允许换行
+  el.contentEditable = 'true'; el.focus();
+  var range = document.createRange(); range.selectNodeContents(el);
+  var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  var finishEdit = function() {
+    el.contentEditable = 'false';
+    el.style.whiteSpace = 'nowrap'; // 恢复单行
+    var node = findNode(state.root, nodeId);
+    if (node) { pushUndo(); node.text = el.textContent.trim() || '新节点'; }
+    el.removeEventListener('blur', finishEdit); el.removeEventListener('keydown', handleEditKey); render();
+  };
+  var handleEditKey = function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); el.blur(); }
+  };
+  el.addEventListener('blur', finishEdit); el.addEventListener('keydown', handleEditKey);
+}
+
+// ===== 拖拽 =====
+function handleDrop(sourceId, targetId) {
+  if (sourceId === targetId || isDescendant(sourceId, targetId) || sourceId === state.root.id) return;
+  pushUndo();
+  var sourceNode = findNode(state.root, sourceId);
+  var sourceParent = findParent(state.root, sourceId);
+  var targetNode = findNode(state.root, targetId);
+  if (!sourceNode || !sourceParent || !targetNode) return;
+  sourceParent.children = sourceParent.children.filter(function(c) { return c.id !== sourceId; });
+  // 被拖拽的节点继承新父节点的方向
+  if (targetNode === state.root) {
+    sourceNode.side = sourceNode.side || 'right'; // 拖到根节点保持原方向
+  } else {
+    sourceNode.side = targetNode.side || 'right'; // 继承目标父节点方向
+  }
+  targetNode.children.push(sourceNode); targetNode.collapsed = false;
+  selectNode(sourceId);
+}
+
+// ===== 撤销 =====
+function pushUndo() {
+  state.undoStack.push(cloneTree(state.root));
+  if (state.undoStack.length > 50) state.undoStack.shift();
+  state.redoStack = [];
+}
+function undo() { if (state.undoStack.length === 0) return; state.redoStack.push(cloneTree(state.root)); state.root = state.undoStack.pop(); state.selectedId = null; render(); }
+function redo() { if (state.redoStack.length === 0) return; state.undoStack.push(cloneTree(state.root)); state.root = state.redoStack.pop(); state.selectedId = null; render(); }
+
+// ===== 工具栏 =====
+function initToolbar() {
+  document.getElementById('btnNew').onclick = function() {
+    if (confirm('新建将清空当前内容，是否继续？')) {
+      pushUndo(); state.root = createNode('中心主题'); state.selectedId = null;
+      state.currentFileName = null; state.zoom = 1; render(); requestAnimationFrame(fitView);
+    }
+  };
+  document.getElementById('btnSave').onclick = showSaveModal;
+  document.getElementById('btnOpen').onclick = showOpenModal;
+  document.getElementById('btnExportJSON').onclick = exportJSON;
+  document.getElementById('btnImportJSON').onclick = function() { document.getElementById('fileInput').click(); };
+  document.getElementById('fileInput').addEventListener('change', importJSON);
+  document.getElementById('btnExportPNG').onclick = exportPNG;
+}
+
+// ===== 导入导出 =====
+function exportJSON() {
+  var data = { name: state.currentFileName || '未命名', savedAt: new Date().toISOString(), root: state.root };
+  var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href = url; a.download = (state.currentFileName || '思维导图') + '.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+function importJSON(e) {
+  var file = e.target.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      var data = JSON.parse(evt.target.result); pushUndo();
+      state.root = data.root || createNode('中心主题'); state.currentFileName = data.name || null;
+      state.selectedId = null; state.zoom = 1; render(); requestAnimationFrame(fitView);
+    } catch (err) { alert('导入失败：文件格式不正确'); }
+  };
+  reader.readAsText(file); e.target.value = '';
+}
+function exportPNG() {
+  var positions = computeLayout();
+  // 用真实 DOM 尺寸更新
+  var nodes = document.querySelectorAll('.mind-node');
+  for (var i = 0; i < nodes.length; i++) {
+    var id = nodes[i].dataset.id;
+    if (positions[id]) { positions[id].width = nodes[i].offsetWidth; positions[id].height = nodes[i].offsetHeight; }
+  }
+  // 再次用真实尺寸重算布局
+  positions = computeLayout();
+  for (var i = 0; i < nodes.length; i++) {
+    var id = nodes[i].dataset.id;
+    if (positions[id]) { positions[id].width = nodes[i].offsetWidth; positions[id].height = nodes[i].offsetHeight; }
+  }
+
+  // 计算边界
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var id in positions) {
+    var p = positions[id];
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x + p.width > maxX) maxX = p.x + p.width;
+    if (p.y + p.height > maxY) maxY = p.y + p.height;
+  }
+  var pad = 60; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  var cropW = maxX - minX, cropH = maxY - minY;
+
+  var canvas = document.createElement('canvas');
+  canvas.width = cropW * 2; canvas.height = cropH * 2;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+
+  // 背景
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0, 0, cropW, cropH);
+
+  // 画连线
+  drawConnectionsOnCanvas(ctx, state.root, positions, minX, minY);
+
+  // 画节点
+  drawNodesOnCanvas(ctx, state.root, positions, minX, minY);
+
+  // 导出
+  var url = canvas.toDataURL('image/png');
+  var a = document.createElement('a'); a.href = url; a.download = (state.currentFileName || '思维导图') + '.png'; a.click();
+}
+
+function drawConnectionsOnCanvas(ctx, node, positions, offsetX, offsetY) {
+  if (node.collapsed || node.children.length === 0) return;
+  var pp = positions[node.id];
+  if (!pp) return;
+  for (var i = 0; i < node.children.length; i++) {
+    var cp = positions[node.children[i].id];
+    if (!cp) continue;
+    var dir = cp.dir || (cp.x >= pp.x ? 1 : -1);
+    var x1, x2;
+    if (dir === 1) { x1 = pp.x + pp.width; x2 = cp.x; }
+    else { x1 = pp.x; x2 = cp.x + cp.width; }
+    var y1 = pp.y + pp.height / 2, y2 = cp.y + cp.height / 2;
+    var cx = (x1 + x2) / 2;
+    ctx.beginPath();
+    ctx.moveTo(x1 - offsetX, y1 - offsetY);
+    ctx.bezierCurveTo(cx - offsetX, y1 - offsetY, cx - offsetX, y2 - offsetY, x2 - offsetX, y2 - offsetY);
+    ctx.strokeStyle = 'rgba(108,92,231,0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawConnectionsOnCanvas(ctx, node.children[i], positions, offsetX, offsetY);
+  }
+}
+
+function drawNodesOnCanvas(ctx, node, positions, offsetX, offsetY) {
+  var p = positions[node.id];
+  if (!p) return;
+  var x = p.x - offsetX, y = p.y - offsetY, w = p.width, h = p.height;
+  var isRoot = node === state.root;
+  var r = isRoot ? 12 : 8;
+
+  // 圆角矩形背景
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+
+  if (isRoot) {
+    var grad = ctx.createLinearGradient(x, y, x + w, y + h);
+    grad.addColorStop(0, '#6c5ce7'); grad.addColorStop(1, '#a29bfe');
+    ctx.fillStyle = grad;
+  } else {
+    ctx.fillStyle = node.style.bgColor || '#fff';
+  }
+  ctx.fill();
+
+  // 边框
+  if (!isRoot) {
+    ctx.strokeStyle = node.style.borderColor || '#d1d5db';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // 阴影效果（简单模拟）
+  ctx.shadowColor = isRoot ? 'rgba(108,92,231,0.25)' : 'rgba(0,0,0,0.06)';
+  ctx.shadowBlur = isRoot ? 12 : 6;
+  ctx.shadowOffsetY = isRoot ? 4 : 2;
+  ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+  // 文字
+  var textX = x + 16, textY = y + h / 2;
+  var iconOffset = 0;
+  if (node.style.icon) { iconOffset = 24; }
+
+  ctx.fillStyle = isRoot ? '#fff' : (node.style.color || '#333');
+  ctx.font = isRoot ? '600 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' : '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(node.text, textX + iconOffset, textY);
+
+  // 图标
+  if (node.style.icon) {
+    ctx.font = '16px sans-serif';
+    ctx.fillText(node.style.icon, textX, textY);
+  }
+
+  // 折叠标记
+  if (node.collapsed && node.children.length > 0) {
+    ctx.fillStyle = 'rgba(108,92,231,0.1)';
+    ctx.beginPath();
+    ctx.arc(x + w - 8, y + h / 2, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6c5ce7';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('+' + countDescendants(node), x + w - 8, y + h / 2 + 1);
+    ctx.textAlign = 'left';
+  }
+
+  // 递归子节点
+  if (!node.collapsed) {
+    for (var i = 0; i < node.children.length; i++) {
+      drawNodesOnCanvas(ctx, node.children[i], positions, offsetX, offsetY);
+    }
+  }
+}
+
+// ===== 本地存储 =====
+function showSaveModal() {
+  var modal = document.getElementById('saveModal'), input = document.getElementById('saveNameInput');
+  input.value = state.currentFileName || new Date().toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-');
+  modal.classList.add('show'); input.focus(); input.select();
+  document.getElementById('saveConfirmBtn').onclick = function() { var name = input.value.trim(); if (!name) return; saveToLocal(name); modal.classList.remove('show'); };
+  document.getElementById('saveCancelBtn').onclick = function() { modal.classList.remove('show'); };
+}
+function saveToLocal(name) {
+  localStorage.setItem('mindmap_' + name, JSON.stringify({ name: name, savedAt: new Date().toISOString(), root: state.root }));
+  state.currentFileName = name; showAutoSaveHint('已保存');
+}
+function showOpenModal() {
+  var modal = document.getElementById('openModal'), list = document.getElementById('openList');
+  list.innerHTML = ''; var saves = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i);
+    if (key.startsWith('mindmap_')) { try { var d = JSON.parse(localStorage.getItem(key)); saves.push({ key: key, name: d.name, savedAt: d.savedAt }); } catch (e) {} }
+  }
+  saves.sort(function(a, b) { return new Date(b.savedAt) - new Date(a.savedAt); });
+  if (saves.length === 0) { list.innerHTML = '<p style="color:#9ca3af;text-align:center;padding:20px;">暂无保存的思维导图</p>'; }
+  else {
+    for (var i = 0; i < saves.length; i++) {
+      (function(save) {
+        var item = document.createElement('div'); item.className = 'save-item';
+        item.innerHTML = '<div><div class="save-name">' + save.name + '</div><div class="save-time">' + new Date(save.savedAt).toLocaleString('zh-CN') + '</div></div><button class="save-delete">删除</button>';
+        item.querySelector('.save-delete').onclick = function(e) { e.stopPropagation(); if (confirm('确定删除"' + save.name + '"？')) { localStorage.removeItem(save.key); showOpenModal(); } };
+        item.onclick = function() { loadFromLocal(save.key); modal.classList.remove('show'); };
+        list.appendChild(item);
+      })(saves[i]);
+    }
+  }
+  modal.classList.add('show');
+  document.getElementById('openCancelBtn').onclick = function() { modal.classList.remove('show'); };
+}
+function loadFromLocal(key) {
+  try { var data = JSON.parse(localStorage.getItem(key)); pushUndo(); state.root = data.root; state.currentFileName = data.name; state.selectedId = null; state.zoom = 1; render(); requestAnimationFrame(fitView); } catch (e) { alert('加载失败'); }
+}
+
+// ===== 自动保存 =====
+var autoSaveTimer = null;
+function scheduleAutoSave() {
+  if (!state.currentFileName) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(function() { saveToLocal(state.currentFileName); }, 3000);
+}
+function showAutoSaveHint(text) {
+  var hint = document.getElementById('autoSaveHint');
+  if (!hint) { hint = document.createElement('div'); hint.id = 'autoSaveHint'; hint.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1e293b;color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;z-index:3000;transition:opacity 0.3s;'; document.body.appendChild(hint); }
+  hint.textContent = text; hint.style.opacity = '1'; setTimeout(function() { hint.style.opacity = '0'; }, 2000);
+}
+
+// ===== 节点装饰 =====
+function showColorModal(nodeId) {
+  var node = findNode(state.root, nodeId); if (!node) return;
+  document.getElementById('bgColorInput').value = node.style.bgColor;
+  document.getElementById('textColorInput').value = node.style.color;
+  document.getElementById('borderColorInput').value = node.style.borderColor;
+  document.getElementById('colorModal').classList.add('show');
+  document.getElementById('colorConfirmBtn').onclick = function() { pushUndo(); node.style.bgColor = document.getElementById('bgColorInput').value; node.style.color = document.getElementById('textColorInput').value; node.style.borderColor = document.getElementById('borderColorInput').value; document.getElementById('colorModal').classList.remove('show'); render(); };
+  document.getElementById('colorCancelBtn').onclick = function() { document.getElementById('colorModal').classList.remove('show'); };
+}
+
+var EMOJI_LIST = ['📌','📎','✅','❌','⭐','💡','🔥','🎯','📝','📋','🔍','💻','🚀','📊','🎨','🔧','⚙️','🔔','💬','❤️','👍','🎉','📦','🌐','🔒','🔑','📅','⏰'];
+function showIconModal(nodeId) {
+  var node = findNode(state.root, nodeId); if (!node) return;
+  var grid = document.getElementById('emojiGrid'); grid.innerHTML = '';
+  var clearItem = document.createElement('span'); clearItem.className = 'emoji-item'; clearItem.textContent = '✕'; clearItem.title = '清除图标';
+  clearItem.onclick = function() { pushUndo(); node.style.icon = null; document.getElementById('iconModal').classList.remove('show'); render(); };
+  grid.appendChild(clearItem);
+  for (var i = 0; i < EMOJI_LIST.length; i++) {
+    (function(emoji) {
+      var item = document.createElement('span'); item.className = 'emoji-item'; item.textContent = emoji;
+      item.onclick = function() { pushUndo(); node.style.icon = emoji; document.getElementById('iconModal').classList.remove('show'); render(); };
+      grid.appendChild(item);
+    })(EMOJI_LIST[i]);
+  }
+  document.getElementById('iconModal').classList.add('show');
+  document.getElementById('iconCancelBtn').onclick = function() { document.getElementById('iconModal').classList.remove('show'); };
+}
+
+function showLinkModal(nodeId) {
+  var node = findNode(state.root, nodeId); if (!node) return;
+  document.getElementById('linkInput').value = node.style.link || '';
+  document.getElementById('linkModal').classList.add('show'); document.getElementById('linkInput').focus();
+  document.getElementById('linkConfirmBtn').onclick = function() { pushUndo(); node.style.link = document.getElementById('linkInput').value.trim() || null; document.getElementById('linkModal').classList.remove('show'); render(); };
+  document.getElementById('linkCancelBtn').onclick = function() { document.getElementById('linkModal').classList.remove('show'); };
+  document.getElementById('linkClearBtn').onclick = function() { pushUndo(); node.style.link = null; document.getElementById('linkModal').classList.remove('show'); render(); };
+}
+
+function showNoteModal(nodeId) {
+  var node = findNode(state.root, nodeId); if (!node) return;
+  document.getElementById('noteTextarea').value = node.style.note || '';
+  document.getElementById('noteModal').classList.add('show'); document.getElementById('noteTextarea').focus();
+  document.getElementById('noteConfirmBtn').onclick = function() { pushUndo(); node.style.note = document.getElementById('noteTextarea').value.trim() || null; document.getElementById('noteModal').classList.remove('show'); render(); };
+  document.getElementById('noteCancelBtn').onclick = function() { document.getElementById('noteModal').classList.remove('show'); };
+  document.getElementById('noteClearBtn').onclick = function() { pushUndo(); node.style.note = null; document.getElementById('noteModal').classList.remove('show'); render(); };
+}
+
+// ===== 快捷键 =====
+function initKeyboard() {
+  document.addEventListener('keydown', function(e) {
+    var isEditing = document.querySelector('.node-text[contenteditable="true"]');
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 's') { e.preventDefault(); if (state.currentFileName) saveToLocal(state.currentFileName); else showSaveModal(); }
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo(); }
+      if (e.key === '0') { e.preventDefault(); fitView(); }
+      return;
+    }
+    if (isEditing || !state.selectedId) return;
+    switch (e.key) {
+      case 'Tab': e.preventDefault(); pushUndo(); addChild(state.selectedId); break;
+      case 'Enter': e.preventDefault(); pushUndo(); addSibling(state.selectedId); break;
+      case 'Delete': case 'Backspace': e.preventDefault(); deleteNode(state.selectedId); break;
+      case 'F2': e.preventDefault(); startEdit(state.selectedId); break;
+      case 'ArrowUp': case 'ArrowDown': case 'ArrowLeft': case 'ArrowRight': e.preventDefault(); navigateNode(e.key); break;
+    }
+  });
+}
+function navigateNode(direction) {
+  if (!state.selectedId) return;
+  var node = findNode(state.root, state.selectedId), parent = findParent(state.root, state.selectedId);
+  if (!node) return;
+  var isLeftSide = node.side === 'left';
+  // 右侧：右箭头=进入子节点，左箭头=回到父节点；左侧反之
+  var expandKey = isLeftSide ? 'ArrowLeft' : 'ArrowRight';
+  var collapseKey = isLeftSide ? 'ArrowRight' : 'ArrowLeft';
+  switch (direction) {
+    case 'ArrowRight': case 'ArrowLeft':
+      if (direction === expandKey) {
+        if (node.children.length > 0 && !node.collapsed) selectNode(node.children[0].id);
+      } else if (direction === collapseKey) {
+        if (parent) selectNode(parent.id);
+      }
+      break;
+    case 'ArrowDown': if (parent) { var idx = parent.children.findIndex(function(c) { return c.id === state.selectedId; }); if (idx < parent.children.length - 1) selectNode(parent.children[idx + 1].id); } break;
+    case 'ArrowUp': if (parent) { var idx2 = parent.children.findIndex(function(c) { return c.id === state.selectedId; }); if (idx2 > 0) selectNode(parent.children[idx2 - 1].id); } break;
+  }
+}
+
+// ===== 模态框 overlay 关闭 =====
+document.addEventListener('DOMContentLoaded', function() {
+  var overlays = document.querySelectorAll('.modal-overlay');
+  for (var i = 0; i < overlays.length; i++) {
+    overlays[i].addEventListener('click', function(e) { if (e.target === this) this.classList.remove('show'); });
+  }
+});
+
+// ===== 初始化 =====
+document.addEventListener('DOMContentLoaded', function() {
+  initCanvas(); initToolbar(); initContextMenu(); initKeyboard(); render();
+  // 首次渲染后居中视图
+  requestAnimationFrame(function() { fitView(); });
+});
+</script>
+</body>
+</html>
