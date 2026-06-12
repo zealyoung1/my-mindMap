@@ -272,16 +272,19 @@
     }
     .float-image:hover .float-resize, .float-image:active .float-resize { display: block; }
     .float-image .float-toolbar {
-      position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
+      position: absolute; bottom: -32px; left: 50%; transform: translateX(-50%);
       background: #fff; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
       display: none; white-space: nowrap; z-index: 3; font-size: 12px;
     }
-    .float-image:hover .float-toolbar { display: flex; }
+    .float-image.selected .float-toolbar { display: flex; }
     .float-toolbar span {
       padding: 4px 10px; cursor: pointer; color: #555; border-right: 1px solid #eee;
     }
     .float-toolbar span:last-child { border-right: none; }
     .float-toolbar span:hover { color: var(--accent); background: #f5f5f5; border-radius: 6px; }
+    .float-image.selected { border-color: var(--accent); box-shadow: 0 4px 20px rgba(108,92,231,0.2); }
+    .float-image.selected .float-resize { display: block; }
+    .float-image.selected .float-close { display: flex; }
 
     /* ===== Modal ===== */
     .modal-overlay {
@@ -1158,6 +1161,10 @@ function renderFloatImages() {
         if (e.target.classList.contains('float-close') || e.target.classList.contains('float-resize')) return;
         if (e.target.closest('.float-toolbar')) return;
         e.stopPropagation(); e.preventDefault();
+        // 选中当前浮动图片（显示工具栏），取消选中其他
+        document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); });
+        w.classList.add('selected');
+        deselectNode(); // 取消节点选中
         startClientX = e.clientX; startClientY = e.clientY;
         var rect = w.getBoundingClientRect();
         offsetX = e.clientX - rect.left; offsetY = e.clientY - rect.top;
@@ -1221,6 +1228,10 @@ function renderFloatImages() {
         if (e.target.classList.contains('float-close') || e.target.classList.contains('float-resize')) return;
         if (e.target.closest('.float-toolbar')) return;
         e.stopPropagation(); e.preventDefault();
+        // 选中当前浮动图片
+        document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); });
+        w.classList.add('selected');
+        deselectNode();
         var touch = e.touches[0];
         touchStartX = touch.clientX; touchStartY = touch.clientY;
         var rect = w.getBoundingClientRect();
