@@ -256,15 +256,32 @@
     }
     .float-image:hover { border-color: var(--accent); box-shadow: 0 4px 20px rgba(108,92,231,0.2); }
     .float-image.drag-over-target { border-color: #e17055; box-shadow: 0 4px 20px rgba(225,112,85,0.3); }
-    .float-image img { display: block; width: 120px; height: 80px; object-fit: cover; border-radius: 6px; }
+    .float-image img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 6px; }
     .float-image .float-close {
       position: absolute; top: -8px; right: -8px; width: 20px; height: 20px;
       border-radius: 50%; background: #fff; border: 1px solid #ddd;
       font-size: 11px; cursor: pointer; display: none;
-      align-items: center; justify-content: center; color: #666;
+      align-items: center; justify-content: center; color: #666; z-index: 2;
     }
-    .float-image:hover .float-close { display: flex; }
+    .float-image:hover .float-close, .float-image:active .float-close { display: flex; }
     .float-image.dragging { cursor: grabbing; opacity: 0.7; }
+    .float-image .float-resize {
+      position: absolute; bottom: -4px; right: -4px; width: 14px; height: 14px;
+      background: #fff; border: 1px solid #ccc; border-radius: 2px; cursor: nwse-resize;
+      display: none; z-index: 2;
+    }
+    .float-image:hover .float-resize, .float-image:active .float-resize { display: block; }
+    .float-image .float-toolbar {
+      position: absolute; top: -32px; left: 50%; transform: translateX(-50%);
+      background: #fff; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      display: none; white-space: nowrap; z-index: 3; font-size: 12px;
+    }
+    .float-image:hover .float-toolbar { display: flex; }
+    .float-toolbar span {
+      padding: 4px 10px; cursor: pointer; color: #555; border-right: 1px solid #eee;
+    }
+    .float-toolbar span:last-child { border-right: none; }
+    .float-toolbar span:hover { color: var(--accent); background: #f5f5f5; border-radius: 6px; }
 
     /* ===== Modal ===== */
     .modal-overlay {
@@ -533,7 +550,7 @@ function createNode(text, side) {
 var state = {
   root: createNode('中心主题'), selectedId: null, currentFileName: null,
   undoStack: [], redoStack: [], pan: { x: 0, y: 0 }, zoom: 1,
-  floatImages: [] // { id, src, x, y } 画布坐标
+  floatImages: [] // { id, src, x, y, w, h } 画布坐标，w/h 为显示宽高
 };
 
 // ===== 树操作 =====
@@ -819,9 +836,22 @@ function renderTree(node, positions) {
         var rect = ctnr.getBoundingClientRect();
         var fx = (ev.clientX - rect.left - state.pan.x) / state.zoom - 60;
         var fy = (ev.clientY - rect.top - state.pan.y) / state.zoom - 40;
-        state.floatImages.push({ id: uuid(), src: sourceNode.style.image, x: fx, y: fy });
+        var imgSrc = sourceNode.style.image;
         sourceNode.style.image = null;
-        render(); toast('图片已移到画布');
+        // 加载原始尺寸后创建浮动图片
+        var tmpImg = new Image();
+        tmpImg.onload = function() {
+          var dw = tmpImg.naturalWidth, dh = tmpImg.naturalHeight;
+          if (dw > 300) { dh = Math.round(dh * 300 / dw); dw = 300; }
+          if (dh > 300) { dw = Math.round(dw * 300 / dh); dh = 300; }
+          state.floatImages.push({ id: uuid(), src: imgSrc, x: fx, y: fy, w: dw, h: dh });
+          render(); toast('图片已移到画布');
+        };
+        tmpImg.onerror = function() {
+          state.floatImages.push({ id: uuid(), src: imgSrc, x: fx, y: fy, w: 120, h: 80 });
+          render(); toast('图片已移到画布');
+        };
+        tmpImg.src = imgSrc;
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -1017,13 +1047,14 @@ function renderFloatImages() {
     wrap.dataset.fid = fi.id;
     wrap.style.left = fi.x + 'px';
     wrap.style.top = fi.y + 'px';
+    wrap.style.width = (fi.w || 120) + 'px';
+    wrap.style.height = (fi.h || 80) + 'px';
     wrap.style.pointerEvents = 'auto';
 
     var img = document.createElement('img');
     img.src = fi.src; img.draggable = false; img.alt = '浮动图片';
     wrap.appendChild(img);
 
-    // 点击放大
     // 点击放大已由 mousedown/mouseup 处理（区分点击和拖拽）
 
     // 关闭按钮
@@ -1038,11 +1069,94 @@ function renderFloatImages() {
     }; })(fi.id));
     wrap.appendChild(closeBtn);
 
+    // 调整大小手柄（右下角，保持横纵比）
+    var resizeHandle = document.createElement('div');
+    resizeHandle.className = 'float-resize';
+    wrap.appendChild(resizeHandle);
+
+    // 浮动工具栏（转为分支）
+    var toolbar = document.createElement('div');
+    toolbar.className = 'float-toolbar';
+    var toBranchBtn = document.createElement('span');
+    toBranchBtn.textContent = '🔗转为分支';
+    toBranchBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    toBranchBtn.addEventListener('click', (function(fid) { return function(e) {
+      e.stopPropagation();
+      var floatImg = state.floatImages.find(function(f) { return f.id === fid; });
+      if (!floatImg) return;
+      pushUndo();
+      // 创建新节点作为根节点的子节点
+      var newNode = createNode('图片分支');
+      newNode.style.image = floatImg.src;
+      newNode.side = floatImg.x >= 0 ? 'right' : 'left';
+      state.root.children.push(newNode);
+      state.root.collapsed = false;
+      // 删除浮动图片
+      state.floatImages = state.floatImages.filter(function(f) { return f.id !== fid; });
+      render();
+      selectNode(newNode.id);
+      toast('已转为分支');
+    }; })(fi.id));
+    toolbar.appendChild(toBranchBtn);
+    wrap.appendChild(toolbar);
+
+    // 调整大小（右下角拖拽，保持横纵比）
+    (function(fid, w) {
+      var resizing = false, resizeStartX, resizeStartY, startW, startH, aspectRatio;
+      resizeHandle.addEventListener('mousedown', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        resizing = true;
+        resizeStartX = e.clientX; resizeStartY = e.clientY;
+        startW = w.offsetWidth; startH = w.offsetHeight;
+        aspectRatio = startW / startH;
+        document.addEventListener('mousemove', onResizeMove);
+        document.addEventListener('mouseup', onResizeUp);
+      });
+      function onResizeMove(e) {
+        if (!resizing) return;
+        var dx = e.clientX - resizeStartX;
+        var newW = Math.max(40, startW + dx);
+        var newH = newW / aspectRatio;
+        w.style.width = newW + 'px'; w.style.height = newH + 'px';
+        var fi = state.floatImages.find(function(f) { return f.id === fid; });
+        if (fi) { fi.w = newW; fi.h = newH; }
+      }
+      function onResizeUp() {
+        resizing = false;
+        document.removeEventListener('mousemove', onResizeMove);
+        document.removeEventListener('mouseup', onResizeUp);
+        scheduleAutoSave();
+      }
+      // 触摸调整大小
+      resizeHandle.addEventListener('touchstart', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        var touch = e.touches[0];
+        resizing = true;
+        resizeStartX = touch.clientX; resizeStartY = touch.clientY;
+        startW = w.offsetWidth; startH = w.offsetHeight;
+        aspectRatio = startW / startH;
+      }, { passive: false });
+      w.addEventListener('touchmove', function(e) {
+        if (!resizing) return;
+        var touch = e.touches[0];
+        var dx = touch.clientX - resizeStartX;
+        var newW = Math.max(40, startW + dx);
+        var newH = newW / aspectRatio;
+        w.style.width = newW + 'px'; w.style.height = newH + 'px';
+        var fi = state.floatImages.find(function(f) { return f.id === fid; });
+        if (fi) { fi.w = newW; fi.h = newH; }
+      }, { passive: false });
+      w.addEventListener('touchend', function() {
+        if (resizing) { resizing = false; scheduleAutoSave(); }
+      });
+    })(fi.id, wrap);
+
     // 拖拽移动位置 + 拖到节点上可移入 + 点击放大
     (function(fid, w) {
       var startClientX, startClientY, offsetX, offsetY, dragging = false;
       w.addEventListener('mousedown', function(e) {
-        if (e.target.classList.contains('float-close')) return;
+        if (e.target.classList.contains('float-close') || e.target.classList.contains('float-resize')) return;
+        if (e.target.closest('.float-toolbar')) return;
         e.stopPropagation(); e.preventDefault();
         startClientX = e.clientX; startClientY = e.clientY;
         var rect = w.getBoundingClientRect();
@@ -1104,7 +1218,8 @@ function renderFloatImages() {
       // 触摸拖拽
       var touchOffsetX, touchOffsetY, touchDragging = false, touchStartX, touchStartY, touchMoved = false;
       w.addEventListener('touchstart', function(e) {
-        if (e.target.classList.contains('float-close')) return;
+        if (e.target.classList.contains('float-close') || e.target.classList.contains('float-resize')) return;
+        if (e.target.closest('.float-toolbar')) return;
         e.stopPropagation(); e.preventDefault();
         var touch = e.touches[0];
         touchStartX = touch.clientX; touchStartY = touch.clientY;
@@ -1646,10 +1761,21 @@ function endTouchDrag(sourceId, type) {
       var cRect = container.getBoundingClientRect();
       var fx = (cx - cRect.left - state.pan.x) / state.zoom - 60;
       var fy = (cy - cRect.top - state.pan.y) / state.zoom - 40;
-      state.floatImages.push({ id: uuid(), src: sourceNode.style.image, x: fx, y: fy });
+      var imgSrc = sourceNode.style.image;
       sourceNode.style.image = null;
-      render();
-      toast('图片已移到画布');
+      var tmpImg = new Image();
+      tmpImg.onload = function() {
+        var dw = tmpImg.naturalWidth, dh = tmpImg.naturalHeight;
+        if (dw > 300) { dh = Math.round(dh * 300 / dw); dw = 300; }
+        if (dh > 300) { dw = Math.round(dw * 300 / dh); dh = 300; }
+        state.floatImages.push({ id: uuid(), src: imgSrc, x: fx, y: fy, w: dw, h: dh });
+        render(); toast('图片已移到画布');
+      };
+      tmpImg.onerror = function() {
+        state.floatImages.push({ id: uuid(), src: imgSrc, x: fx, y: fy, w: 120, h: 80 });
+        render(); toast('图片已移到画布');
+      };
+      tmpImg.src = imgSrc;
     }
   }
 
@@ -1842,10 +1968,11 @@ function exportPNG() {
     // 浮动图片也纳入边界
     for (var fi = 0; fi < state.floatImages.length; fi++) {
       var fp = state.floatImages[fi];
+      var fw = fp.w || 120, fh = fp.h || 80;
       if (fp.x < minX) minX = fp.x;
       if (fp.y < minY) minY = fp.y;
-      if (fp.x + 120 > maxX) maxX = fp.x + 120;
-      if (fp.y + 80 > maxY) maxY = fp.y + 80;
+      if (fp.x + fw > maxX) maxX = fp.x + fw;
+      if (fp.y + fh > maxY) maxY = fp.y + fh;
     }
     if (!isFinite(minX)) { toast('导出失败：画布为空'); return; }
     var pad = 60; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
@@ -1882,13 +2009,14 @@ function exportPNG() {
           var fImg = state.floatImages[fi];
           var fImgObj = loadedImages['float_' + fImg.id];
           var fX = fImg.x - minX, fY = fImg.y - minY;
+          var fW = fImg.w || 120, fH = fImg.h || 80;
           if (fImgObj) {
             ctx.save();
             ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
             ctx.beginPath();
-            if (ctx.roundRect) { ctx.roundRect(fX, fY, 120, 80, 8); } else { ctx.rect(fX, fY, 120, 80); }
+            if (ctx.roundRect) { ctx.roundRect(fX, fY, fW, fH, 8); } else { ctx.rect(fX, fY, fW, fH); }
             ctx.clip();
-            ctx.drawImage(fImgObj, fX, fY, 120, 80);
+            ctx.drawImage(fImgObj, fX, fY, fW, fH);
             ctx.restore();
           } else {
             ctx.fillStyle = '#f3f4f6';
@@ -2166,7 +2294,7 @@ function showOpenModal() {
   document.getElementById('openCancelBtn').onclick = function() { modal.classList.remove('show'); };
 }
 function loadFromLocal(key) {
-  try { var data = JSON.parse(localStorage.getItem(key)); pushUndo(); state.root = data.root; state.floatImages = data.floatImages || []; state.currentFileName = data.name; state.selectedId = null; render(); requestAnimationFrame(fitView); } catch (e) { alert('加载失败'); }
+  try { var data = JSON.parse(localStorage.getItem(key)); pushUndo(); state.root = data.root; state.floatImages = migrateFloatImages(data.floatImages || []); state.currentFileName = data.name; state.selectedId = null; render(); requestAnimationFrame(fitView); } catch (e) { alert('加载失败'); }
 }
 
 // ===== 自动保存 =====
@@ -2202,7 +2330,7 @@ function loadAutoSave() {
     var data = JSON.parse(raw);
     if (!data || !data.root) return false;
     state.root = data.root;
-    state.floatImages = data.floatImages || [];
+    state.floatImages = migrateFloatImages(data.floatImages || []);
     state.pan = data.pan || { x: 0, y: 0 };
     state.zoom = data.zoom || 1;
     if (data.name && data.name !== '__unsaved__') state.currentFileName = data.name;
@@ -2298,6 +2426,15 @@ function compressAndSetImage(file, node) {
 }
 
 // 压缩图片并创建浮动图片
+// 兼容旧数据：给没有 w/h 的浮动图片补默认值
+function migrateFloatImages(arr) {
+  if (!arr) return [];
+  for (var i = 0; i < arr.length; i++) {
+    if (!arr[i].w || !arr[i].h) { arr[i].w = 120; arr[i].h = 80; }
+  }
+  return arr;
+}
+
 function compressAndSetFloatImage(file, x, y) {
   var reader = new FileReader();
   reader.onload = function(e) {
@@ -2305,6 +2442,7 @@ function compressAndSetFloatImage(file, x, y) {
     img.onload = function() {
       var maxW = 400, quality = 0.7;
       var w = img.width, h = img.height;
+      var origW = w, origH = h;
       if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
       var canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
@@ -2312,7 +2450,11 @@ function compressAndSetFloatImage(file, x, y) {
       ctx.drawImage(img, 0, 0, w, h);
       var dataUrl = canvas.toDataURL('image/jpeg', quality);
       pushUndo();
-      state.floatImages.push({ id: uuid(), src: dataUrl, x: x, y: y });
+      // 显示尺寸按比例缩放，最大宽 300
+      var dispW = origW, dispH = origH;
+      if (dispW > 300) { dispH = Math.round(dispH * 300 / dispW); dispW = 300; }
+      if (dispH > 300) { dispW = Math.round(dispW * 300 / dispH); dispH = 300; }
+      state.floatImages.push({ id: uuid(), src: dataUrl, x: x, y: y, w: dispW, h: dispH });
       render();
     };
     img.src = e.target.result;
