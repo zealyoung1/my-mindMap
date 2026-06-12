@@ -1164,7 +1164,9 @@ function renderFloatImages() {
         // 选中当前浮动图片（显示工具栏），取消选中其他
         document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); });
         w.classList.add('selected');
-        deselectNode(); // 取消节点选中
+        // 取消节点选中（不触发 render，避免重建 DOM 导致拖拽脱管）
+        state.selectedId = null; hideActionBar();
+        document.querySelectorAll('.mind-node.selected').forEach(function(el) { el.classList.remove('selected'); });
         startClientX = e.clientX; startClientY = e.clientY;
         var rect = w.getBoundingClientRect();
         offsetX = e.clientX - rect.left; offsetY = e.clientY - rect.top;
@@ -1231,7 +1233,9 @@ function renderFloatImages() {
         // 选中当前浮动图片
         document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); });
         w.classList.add('selected');
-        deselectNode();
+        // 取消节点选中（不触发 render）
+        state.selectedId = null; hideActionBar();
+        document.querySelectorAll('.mind-node.selected').forEach(function(el) { el.classList.remove('selected'); });
         var touch = e.touches[0];
         touchStartX = touch.clientX; touchStartY = touch.clientY;
         var rect = w.getBoundingClientRect();
