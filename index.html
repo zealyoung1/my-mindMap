@@ -1102,20 +1102,26 @@ function renderFloatImages() {
         scheduleAutoSave();
       }
       // 触摸拖拽
-      var touchOffsetX, touchOffsetY, touchDragging = false;
+      var touchOffsetX, touchOffsetY, touchDragging = false, touchStartX, touchStartY, touchMoved = false;
       w.addEventListener('touchstart', function(e) {
-        if (e.target.classList.contains('float-close') || e.target.tagName === 'IMG') return;
+        if (e.target.classList.contains('float-close')) return;
         e.stopPropagation(); e.preventDefault();
         var touch = e.touches[0];
-        touchDragging = true; w.classList.add('dragging');
+        touchStartX = touch.clientX; touchStartY = touch.clientY;
         var rect = w.getBoundingClientRect();
         touchOffsetX = touch.clientX - rect.left;
         touchOffsetY = touch.clientY - rect.top;
+        touchDragging = true; touchMoved = false;
       }, { passive: false });
       w.addEventListener('touchmove', function(e) {
         if (!touchDragging) return;
-        e.preventDefault();
         var touch = e.touches[0];
+        var dx = touch.clientX - touchStartX, dy = touch.clientY - touchStartY;
+        if (!touchMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+          touchMoved = true; w.classList.add('dragging');
+        }
+        if (!touchMoved) return;
+        e.preventDefault();
         var canvasRect = document.getElementById('canvasContent').getBoundingClientRect();
         var newX = (touch.clientX - canvasRect.left - touchOffsetX) / state.zoom;
         var newY = (touch.clientY - canvasRect.top - touchOffsetY) / state.zoom;
@@ -1124,14 +1130,20 @@ function renderFloatImages() {
         if (fi) { fi.x = newX; fi.y = newY; }
         // 高亮节点
         document.querySelectorAll('.mind-node.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
-        var ghost = w; ghost.style.display = 'none';
+        w.style.display = 'none';
         var target = document.elementFromPoint(touch.clientX, touch.clientY);
-        ghost.style.display = '';
+        w.style.display = '';
         var nodeEl = target ? target.closest('.mind-node') : null;
         if (nodeEl) nodeEl.classList.add('drag-over');
       }, { passive: false });
       w.addEventListener('touchend', function(e) {
         touchDragging = false; w.classList.remove('dragging');
+        if (!touchMoved) {
+          // 没有拖拽 → 点击放大
+          var fi = state.floatImages.find(function(f) { return f.id === fid; });
+          if (fi) showLightbox(fi.src);
+          return;
+        }
         // 检测是否放到节点上
         w.style.display = 'none';
         var target = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
