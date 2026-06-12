@@ -272,16 +272,16 @@
     }
     .float-image:hover .float-resize, .float-image:active .float-resize { display: block; }
     .float-image .float-toolbar {
-      position: absolute; bottom: -32px; left: 50%; transform: translateX(-50%);
-      background: #fff; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      display: none; white-space: nowrap; z-index: 3; font-size: 12px;
+      position: fixed; z-index: 9999; background: #fff; border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18); white-space: nowrap; font-size: 12px;
+      padding: 0; display: none;
     }
-    .float-image.selected .float-toolbar { display: flex; }
+    .float-toolbar.visible { display: flex; }
     .float-toolbar span {
-      padding: 4px 10px; cursor: pointer; color: #555; border-right: 1px solid #eee;
+      padding: 6px 12px; cursor: pointer; color: #555; border-right: 1px solid #eee;
     }
     .float-toolbar span:last-child { border-right: none; }
-    .float-toolbar span:hover { color: var(--accent); background: #f5f5f5; border-radius: 6px; }
+    .float-toolbar span:hover { color: var(--accent); background: #f5f5f5; border-radius: 8px; }
     .float-image.selected { border-color: var(--accent); box-shadow: 0 4px 20px rgba(108,92,231,0.2); }
     .float-image.selected .float-resize { display: block; }
     .float-image.selected .float-close { display: flex; }
@@ -1043,6 +1043,8 @@ function renderFloatImages() {
   }
   // 清空并重新渲染
   layer.innerHTML = '';
+  // 清除旧的工具栏（挂在 body 上）
+  document.querySelectorAll('.float-toolbar').forEach(function(el) { el.remove(); });
   for (var i = 0; i < state.floatImages.length; i++) {
     var fi = state.floatImages[i];
     var wrap = document.createElement('div');
@@ -1077,13 +1079,14 @@ function renderFloatImages() {
     resizeHandle.className = 'float-resize';
     wrap.appendChild(resizeHandle);
 
-    // 浮动工具栏（转为分支）
+    // 浮动工具栏（转为分支）— 放在 body 上避免被裁剪
     var toolbar = document.createElement('div');
     toolbar.className = 'float-toolbar';
+    toolbar.dataset.forFid = fi.id;
     var toBranchBtn = document.createElement('span');
     toBranchBtn.textContent = '🔗转为分支';
     toBranchBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); });
-    toBranchBtn.addEventListener('click', (function(fid) { return function(e) {
+    toBranchBtn.addEventListener('click', (function(fid, w) { return function(e) {
       e.stopPropagation();
       var floatImg = state.floatImages.find(function(f) { return f.id === fid; });
       if (!floatImg) return;
@@ -1099,9 +1102,10 @@ function renderFloatImages() {
       render();
       selectNode(newNode.id);
       toast('已转为分支');
-    }; })(fi.id));
+    }; })(fi.id, wrap));
     toolbar.appendChild(toBranchBtn);
-    wrap.appendChild(toolbar);
+    // 工具栏挂到 body，位置在选中时动态计算
+    document.body.appendChild(toolbar);
 
     // 调整大小（右下角拖拽，保持横纵比）
     (function(fid, w) {
@@ -1163,7 +1167,16 @@ function renderFloatImages() {
         e.stopPropagation(); e.preventDefault();
         // 选中当前浮动图片（显示工具栏），取消选中其他
         document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); });
+        document.querySelectorAll('.float-toolbar.visible').forEach(function(el) { el.classList.remove('visible'); });
         w.classList.add('selected');
+        // 显示并定位工具栏
+        var tb = document.querySelector('.float-toolbar[data-for-fid="' + fid + '"]');
+        if (tb) {
+          var wRect = w.getBoundingClientRect();
+          tb.style.left = (wRect.left + wRect.width / 2 - 60) + 'px';
+          tb.style.top = (wRect.bottom + 6) + 'px';
+          tb.classList.add('visible');
+        }
         // 取消节点选中（不触发 render，避免重建 DOM 导致拖拽脱管）
         state.selectedId = null; hideActionBar();
         document.querySelectorAll('.mind-node.selected').forEach(function(el) { el.classList.remove('selected'); });
@@ -1177,6 +1190,9 @@ function renderFloatImages() {
         var dx = e.clientX - startClientX, dy = e.clientY - startClientY;
         if (!dragging && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
           dragging = true; w.classList.add('dragging');
+          // 拖拽开始时隐藏工具栏
+          var tb = document.querySelector('.float-toolbar.visible');
+          if (tb) tb.classList.remove('visible');
         }
         if (!dragging) return;
         var canvasRect = document.getElementById('canvasContent').getBoundingClientRect();
@@ -1222,6 +1238,14 @@ function renderFloatImages() {
             return;
           }
         }
+        // 拖拽结束后重新定位工具栏
+        var tb2 = document.querySelector('.float-toolbar[data-for-fid="' + fid + '"]');
+        if (tb2) {
+          var wRect2 = w.getBoundingClientRect();
+          tb2.style.left = (wRect2.left + wRect2.width / 2 - 60) + 'px';
+          tb2.style.top = (wRect2.bottom + 6) + 'px';
+          tb2.classList.add('visible');
+        }
         scheduleAutoSave();
       }
       // 触摸拖拽
@@ -1232,7 +1256,15 @@ function renderFloatImages() {
         e.stopPropagation(); e.preventDefault();
         // 选中当前浮动图片
         document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); });
+        document.querySelectorAll('.float-toolbar.visible').forEach(function(el) { el.classList.remove('visible'); });
         w.classList.add('selected');
+        var tb = document.querySelector('.float-toolbar[data-for-fid="' + fid + '"]');
+        if (tb) {
+          var wRect = w.getBoundingClientRect();
+          tb.style.left = (wRect.left + wRect.width / 2 - 60) + 'px';
+          tb.style.top = (wRect.bottom + 6) + 'px';
+          tb.classList.add('visible');
+        }
         // 取消节点选中（不触发 render）
         state.selectedId = null; hideActionBar();
         document.querySelectorAll('.mind-node.selected').forEach(function(el) { el.classList.remove('selected'); });
@@ -1461,7 +1493,7 @@ function fitView() {
 
 // ===== 节点操作 =====
 function selectNode(id) { state.selectedId = id; render(); }
-function deselectNode() { state.selectedId = null; hideActionBar(); render(); }
+function deselectNode() { state.selectedId = null; hideActionBar(); document.querySelectorAll('.float-image.selected').forEach(function(el) { el.classList.remove('selected'); }); document.querySelectorAll('.float-toolbar.visible').forEach(function(el) { el.classList.remove('visible'); }); render(); }
 
 // 全局触摸双击检测（不受 render 销毁 DOM 影响）
 var _lastTapTime = 0, _lastTapId = null;
